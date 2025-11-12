@@ -1,0 +1,44 @@
+{
+  "name": "tourism-platform-frontend",
+  "version": "1.0.0",
+  "description": "Gamified tourism platform web app",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.1",
+    "react-leaflet": "^4.2.1",
+    "leaflet": "^1.9.4",
+    "axios": "^1.6.2",
+    "zustand": "^4.4.7",
+    "react-hook-form": "^7.49.2",
+    "@headlessui/react": "^1.7.17",
+    "@heroicons/react": "^2.1.1"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.7",
+    "tailwindcss": "^3.3.6",
+    "postcss": "^8.4.32",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.55.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
