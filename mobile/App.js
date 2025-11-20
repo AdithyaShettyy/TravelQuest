@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import useAuthStore from './src/store/authStore';
 
 // Screens
@@ -10,6 +11,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import MapScreen from './src/screens/MapScreen';
 import QuestsScreen from './src/screens/QuestsScreen';
 import QuestDetailScreen from './src/screens/QuestDetailScreen';
+import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import POIDetailScreen from './src/screens/POIDetailScreen';
 
@@ -40,10 +42,10 @@ function MainTabs() {
         name="MapTab"
         component={MapScreen}
         options={{
-          title: '🗺️ Map',
+          title: 'Map',
           tabBarLabel: 'Map',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24 }}>🗺️</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map" size={size} color={color} />
           ),
         }}
       />
@@ -51,10 +53,21 @@ function MainTabs() {
         name="QuestsTab"
         component={QuestsScreen}
         options={{
-          title: '🎯 Quests',
+          title: 'Quests',
           tabBarLabel: 'Quests',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24 }}>🎯</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="LeaderboardTab"
+        component={LeaderboardScreen}
+        options={{
+          title: 'Leaderboard',
+          tabBarLabel: 'Leaderboard',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="podium" size={size} color={color} />
           ),
         }}
       />
@@ -62,10 +75,10 @@ function MainTabs() {
         name="ProfileTab"
         component={ProfileScreen}
         options={{
-          title: '👤 Profile',
+          title: 'Profile',
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24 }}>👤</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />

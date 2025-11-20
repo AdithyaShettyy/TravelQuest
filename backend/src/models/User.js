@@ -40,6 +40,31 @@ module.exports = (sequelize) => {
       type: DataTypes.INTEGER,
       defaultValue: 0
     },
+    weeklyPoints: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      comment: 'Points earned this week (resets Monday 00:00 UTC)'
+    },
+    lastWeekPoints: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      comment: 'Points from previous week'
+    },
+    weeklyRank: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Current rank in weekly leaderboard'
+    },
+    lastWeekRank: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Rank from previous week'
+    },
+    weekStartDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Start of current week period'
+    },
     currentStreak: {
       type: DataTypes.INTEGER,
       defaultValue: 0

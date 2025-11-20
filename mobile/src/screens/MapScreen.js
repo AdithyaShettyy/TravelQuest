@@ -17,12 +17,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import MapView, { Marker, Circle, Polyline, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../lib/api';
 
 const { width, height } = Dimensions.get('window');
 
 // Route cache to avoid repeated API calls
 const routeCache = new Map();
+
+// Strip HTML tags from text
+const stripHtml = (html) => {
+  try {
+    if (html == null) return 'Continue';
+    const str = String(html);
+    const cleaned = str.replace(/<[^>]*>/g, '').trim();
+    return cleaned || 'Continue';
+  } catch (error) {
+    console.log('Error in stripHtml:', error, 'input:', html);
+    return 'Continue';
+  }
+};
 
 // Multiple routing services with fallback
 // 1. OSRM - Free, unlimited, no API key needed
@@ -139,8 +153,11 @@ const fetchDetailedRoute = async (start, end) => {
             const steps = [];
             if (route.legs && route.legs.length > 0) {
               route.legs[0].steps.forEach((step, index) => {
+                const rawInstruction = step.maneuver?.instruction || step.name || 'Continue';
+                const processedInstruction = stripHtml(String(rawInstruction || ''));
+                console.log(`Step ${index} raw:`, rawInstruction, 'processed:', processedInstruction);
                 steps.push({
-                  instruction: step.maneuver?.instruction || step.name || 'Continue',
+                  instruction: processedInstruction,
                   distance: (step.distance / 1000).toFixed(2), // km
                   duration: Math.round(step.duration / 60), // minutes
                   type: step.maneuver?.type || 'straight',
@@ -176,7 +193,7 @@ const fetchDetailedRoute = async (start, end) => {
       distance: calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude),
       duration: 'N/A',
       steps: [{
-        instruction: 'Head straight to destination',
+        instruction: stripHtml('Head straight to destination'),
         distance: calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude),
         duration: 'N/A',
         type: 'straight',
@@ -538,6 +555,10 @@ export default function MapScreen({ navigation }) {
   };
 
   const startNavigation = async (poi) => {
+    if (!poi || !poi.name) {
+      console.error('Invalid POI passed to startNavigation:', poi);
+      return;
+    }
     console.log(`🚀 Preparing navigation to ${poi.name}`);
     setActivePOI(poi);
     setShowRoutes(true);
@@ -693,33 +714,44 @@ export default function MapScreen({ navigation }) {
   };
 
   const getTurnIcon = (type, modifier) => {
-    const key = `${type}-${modifier}`.toLowerCase();
-    
-    const icons = {
-      'turn-left': '↰',
-      'turn-right': '↱',
-      'turn-sharp left': '⤺',
-      'turn-sharp right': '⤻',
-      'turn-slight left': '↖',
-      'turn-slight right': '↗',
-      'straight-': '↑',
-      'merge-': '⤴',
-      'depart-': '🚗',
-      'arrive-': '🏁',
-      'roundabout-': '⭮',
-      'continue-': '↑',
-    };
-    
-    for (const [pattern, icon] of Object.entries(icons)) {
-      if (key.includes(pattern.replace('-', ''))) {
-        return icon;
+    try {
+      const key = `${type}-${modifier}`.toLowerCase();
+      console.log('🔄 getTurnIcon called with:', { type, modifier, key });
+      
+      // Return icon names compatible with Ionicons/MaterialCommunityIcons
+      const iconMap = {
+        'turn-left': { name: 'arrow-back', type: 'ion' },
+        'turn-right': { name: 'arrow-forward', type: 'ion' },
+        'turn-sharp left': { name: 'arrow-back', type: 'ion' },
+        'turn-sharp right': { name: 'arrow-forward', type: 'ion' },
+        'turn-slight left': { name: 'arrow-undo', type: 'mat' },
+        'turn-slight right': { name: 'arrow-redo', type: 'mat' },
+        'straight-': { name: 'arrow-up', type: 'ion' },
+        'merge-': { name: 'arrow-up', type: 'ion' },
+        'depart-': { name: 'navigate', type: 'ion' },
+        'arrive-': { name: 'checkmark-circle', type: 'ion' },
+        'roundabout-': { name: 'sync', type: 'ion' },
+        'continue-': { name: 'arrow-up', type: 'ion' },
+      };
+      
+      for (const [pattern, icon] of Object.entries(iconMap)) {
+        if (key.includes(pattern.replace('-', ''))) {
+          return icon;
+        }
       }
+      
+      return { name: 'arrow-forward', type: 'ion' };
+    } catch (error) {
+      console.log('Error in getTurnIcon:', error, 'type:', type, 'modifier:', modifier);
+      return { name: 'arrow-forward', type: 'ion' };
     }
-    
-    return '→';
   };
 
   const switchRoute = (poi) => {
+    if (!poi || !poi.location || !poi.location.coordinates) {
+      console.error('Invalid POI passed to switchRoute:', poi);
+      return;
+    }
     setActivePOI(poi);
     if (mapRef.current) {
       const poiCoords = {
@@ -816,7 +848,7 @@ export default function MapScreen({ navigation }) {
               console.log('🎉 Arrived at destination!');
               Alert.alert(
                 '🎉 Arrived!',
-                `You have reached ${activePOI.name}`,
+                `You have reached ${activePOI?.name || 'your destination'}`,
                 [{ text: 'OK', onPress: stopNavigation }]
               );
             }
@@ -874,7 +906,7 @@ export default function MapScreen({ navigation }) {
           style={styles.errorGradient}
         >
           <View style={styles.errorContent}>
-            <Text style={styles.errorIcon}>📍</Text>
+            <Ionicons name="location-outline" size={64} color="#94a3b8" />
             <Text style={styles.errorTitle}>Location Access Needed</Text>
             <Text style={styles.errorDescription}>
               We need your location to show nearby attractions and provide navigation.
@@ -920,10 +952,10 @@ export default function MapScreen({ navigation }) {
         style={styles.map}
         initialRegion={location}
         showsUserLocation
-        showsMyLocationButton={!isNavigating}
+        showsMyLocationButton={false}
         loadingEnabled
         followsUserLocation={isNavigating}
-        showsCompass={isNavigating}
+        showsCompass={false}
         showsTraffic={isNavigating}
         rotateEnabled={true}
         pitchEnabled={true}
@@ -1043,19 +1075,19 @@ export default function MapScreen({ navigation }) {
               }}
               style={styles.searchBarContent}
             >
-              <View style={styles.searchIcon}>
-                <Text style={styles.searchIconText}>🔍</Text>
+              <View style={styles.searchIconWrapper}>
+                <Ionicons name="search" size={20} color="#3b82f6" />
               </View>
               <View style={styles.searchTextContainer}>
                 <Text style={styles.searchPlaceholder}>
                   {showRoutes ? 'Showing nearby places' : 'Search nearby places'}
                 </Text>
                 <Text style={styles.searchSubtext}>
-                  {pois.length} places found within 5km
+                  {pois.length} {pois.length === 1 ? 'place' : 'places'} found
                 </Text>
               </View>
-              <View style={styles.searchActionIcon}>
-                <Text style={styles.searchActionText}>{showRoutes ? '✕' : '→'}</Text>
+              <View style={styles.placesCountBadge}>
+                <Text style={styles.placesCountText}>{pois.length}</Text>
               </View>
             </TouchableOpacity>
           </BlurView>
@@ -1064,20 +1096,20 @@ export default function MapScreen({ navigation }) {
 
       {/* Control Buttons - Right Side */}
       <View style={styles.controlButtonsContainer}>
-        {/* Refresh Button */}
+        {/* Refresh POIs Button */}
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={fetchNearbyPOIs}
           disabled={refreshing}
-          style={styles.controlButton}
+          style={styles.modernControlButton}
         >
-          <BlurView intensity={80} tint="light" style={styles.controlButtonBlur}>
-            <View style={styles.controlButtonInner}>
-              <Text style={[styles.controlButtonIcon, refreshing && styles.controlButtonIconActive]}>
-                {refreshing ? '↻' : '⟳'}
-              </Text>
-            </View>
-          </BlurView>
+          <View style={styles.modernControlButtonInner}>
+            <Ionicons 
+              name={refreshing ? "reload" : "refresh"} 
+              size={20} 
+              color="#3b82f6" 
+            />
+          </View>
         </TouchableOpacity>
 
         {/* My Location Button */}
@@ -1093,18 +1125,16 @@ export default function MapScreen({ navigation }) {
               }, { duration: 1000 });
             }
           }}
-          style={styles.controlButton}
+          style={styles.modernControlButton}
         >
-          <BlurView intensity={80} tint="light" style={styles.controlButtonBlur}>
-            <View style={styles.controlButtonInner}>
-              <Text style={styles.controlButtonIcon}>⊙</Text>
-            </View>
-          </BlurView>
+          <View style={styles.modernControlButtonInner}>
+            <Ionicons name="locate" size={20} color="#3b82f6" />
+          </View>
         </TouchableOpacity>
       </View>
 
       {/* Active Navigation Banner - Premium Glassmorphism Design */}
-      {isNavigating && activePOI && detailedRoute && detailedRoute.steps.length > 0 && (
+      {isNavigating && activePOI && activePOI.name && detailedRoute && detailedRoute.steps && detailedRoute.steps.length > 0 && (
         <Animated.View 
           style={[
             styles.turnByTurnContainer,
@@ -1118,111 +1148,101 @@ export default function MapScreen({ navigation }) {
             },
           ]}
         >
-          <BlurView intensity={95} tint="light" style={styles.navCardBlur}>
-            {/* Main current instruction - Google Maps style with Gradient */}
-            <LinearGradient
-              colors={['rgba(59, 130, 246, 0.15)', 'rgba(37, 99, 235, 0.1)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.currentTurnCard}
-            >
-              <View style={styles.turnIconContainer}>
-                <Text style={styles.turnIcon}>
-                  {getTurnIcon(
-                    detailedRoute.steps[currentStepIndex]?.type,
-                    detailedRoute.steps[currentStepIndex]?.modifier
-                  )}
-                </Text>
-              </View>
-              <View style={styles.currentTurnInfo}>
-                <Text style={styles.currentTurnDistance}>
-                  {detailedRoute.steps[currentStepIndex]?.distance} km
-                </Text>
-                <Text style={styles.currentTurnInstruction}>
-                  {detailedRoute.steps[currentStepIndex]?.instruction}
-                </Text>
-              </View>
-            </LinearGradient>
-            
-            {/* Trip info bar with gradient background */}
-            <LinearGradient
-              colors={['rgba(15, 23, 42, 0.03)', 'rgba(15, 23, 42, 0.08)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.tripInfoBar}
-            >
-              <View style={styles.tripInfoItem}>
-                <Text style={styles.tripInfoIcon}>📍</Text>
-                <View>
-                  <Text style={styles.tripInfoLabel}>Distance</Text>
-                  <Text style={styles.tripInfoValue}>
-                    {remainingDistance || detailedRoute.distance} km
+          <View style={styles.navCardBlur}>
+            {/* Current Turn - Hero Card */}
+            <View style={styles.currentTurnCard}>
+              <View style={styles.currentTurnIconWrapper}>
+                <View style={styles.currentTurnIconBg}>
+                  {(() => {
+                    const icon = getTurnIcon(
+                      detailedRoute.steps[currentStepIndex]?.type,
+                      detailedRoute.steps[currentStepIndex]?.modifier
+                    );
+                    return icon.type === 'mat' ? (
+                      <MaterialCommunityIcons name={icon.name} size={32} color="#fff" />
+                    ) : (
+                      <Ionicons name={icon.name} size={32} color="#fff" />
+                    );
+                  })()}
+                </View>
+                <View style={styles.distanceBadge}>
+                  <Text style={styles.distanceBadgeText}>
+                    {String(detailedRoute.steps[currentStepIndex]?.distance || '0')} km
                   </Text>
                 </View>
               </View>
-              <View style={styles.tripInfoDivider} />
-              <View style={styles.tripInfoItem}>
-                <Text style={styles.tripInfoIcon}>⏱️</Text>
-                <View>
-                  <Text style={styles.tripInfoLabel}>Time</Text>
-                  <Text style={styles.tripInfoValue}>{detailedRoute.duration} min</Text>
-                </View>
+              
+              <View style={styles.currentTurnContent}>
+                <Text style={styles.currentTurnLabel}>CONTINUE</Text>
+                <Text style={styles.currentTurnInstruction} numberOfLines={2}>
+                  {stripHtml(detailedRoute.steps[currentStepIndex]?.instruction) || 'Continue straight'}
+                </Text>
               </View>
-              <View style={styles.tripInfoDivider} />
-              <View style={styles.tripInfoItem}>
-                <Text style={styles.tripInfoIcon}>📊</Text>
-                <View>
-                  <Text style={styles.tripInfoLabel}>Step</Text>
-                  <Text style={styles.tripInfoValue}>
-                    {currentStepIndex + 1}/{detailedRoute.steps.length}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.exitNavButton}
-                onPress={stopNavigation}
-              >
-                <LinearGradient
-                  colors={['#ef4444', '#dc2626']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.exitNavGradient}
-                >
-                  <Text style={styles.exitNavText}>✕</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </LinearGradient>
 
-            {/* Next turn preview with gradient */}
-            {currentStepIndex < detailedRoute.steps.length - 1 && (
-              <LinearGradient
-                colors={['rgba(139, 92, 246, 0.08)', 'rgba(124, 58, 237, 0.12)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.nextTurnPreview}
+              <TouchableOpacity
+                style={styles.closeNavButton}
+                onPress={stopNavigation}
+                activeOpacity={0.7}
               >
-                <Text style={styles.nextTurnLabel}>THEN</Text>
-                <View style={styles.nextTurnIconContainer}>
-                  <Text style={styles.nextTurnIcon}>
-                    {getTurnIcon(
+                <View style={styles.closeNavCircle}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Trip Stats Row */}
+            <View style={styles.tripStatsRow}>
+              <View style={styles.tripStatBox}>
+                <Ionicons name="navigate-circle-outline" size={18} color="#3b82f6" />
+                <View style={styles.tripStatContent}>
+                  <Text style={styles.tripStatValue}>
+                    {String(remainingDistance || detailedRoute.distance)}
+                  </Text>
+                  <Text style={styles.tripStatUnit}>km</Text>
+                </View>
+              </View>
+
+              <View style={styles.tripStatDivider} />
+
+              <View style={styles.tripStatBox}>
+                <Ionicons name="time-outline" size={18} color="#10b981" />
+                <View style={styles.tripStatContent}>
+                  <Text style={styles.tripStatValue}>{String(detailedRoute.duration)}</Text>
+                  <Text style={styles.tripStatUnit}>min</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Next Turn Preview - Compact */}
+            {currentStepIndex < detailedRoute.steps.length - 1 && (
+              <View style={styles.nextTurnCompact}>
+                <Text style={styles.nextTurnThen}>THEN</Text>
+                <View style={styles.nextTurnIconSmall}>
+                  {(() => {
+                    const icon = getTurnIcon(
                       detailedRoute.steps[currentStepIndex + 1]?.type,
                       detailedRoute.steps[currentStepIndex + 1]?.modifier
-                    )}
-                  </Text>
+                    );
+                    return icon.type === 'mat' ? (
+                      <MaterialCommunityIcons name={icon.name} size={20} color="#8b5cf6" />
+                    ) : (
+                      <Ionicons name={icon.name} size={20} color="#8b5cf6" />
+                    );
+                  })()}
                 </View>
-                <Text style={styles.nextTurnText} numberOfLines={1}>
-                  {detailedRoute.steps[currentStepIndex + 1]?.instruction}
+                <Text style={styles.nextTurnInstructionText} numberOfLines={1}>
+                  {stripHtml(detailedRoute.steps[currentStepIndex + 1]?.instruction) || 'Continue'}
                 </Text>
-                <Text style={styles.nextTurnDistance}>
-                  {detailedRoute.steps[currentStepIndex + 1]?.distance} km
+                <Text style={styles.nextTurnDistanceText}>
+                  {String(detailedRoute.steps[currentStepIndex + 1]?.distance || '0')} km
                 </Text>
-              </LinearGradient>
+              </View>
             )}
-          </BlurView>
+          </View>
         </Animated.View>
       )}
 
-      {/* Recenter button during navigation (Floating Action Button) */}
+      {/* Recenter FAB during navigation */}
       {isNavigating && (
         <TouchableOpacity
           activeOpacity={0.9}
@@ -1239,149 +1259,79 @@ export default function MapScreen({ navigation }) {
             }
           }}
         >
-          <Text style={styles.recenterIcon}>🎯</Text>
+          <View style={styles.recenterButtonBg}>
+            <Ionicons name="navigate" size={24} color="#fff" />
+          </View>
         </TouchableOpacity>
       )}
 
-      {/* Navigation Preview with Premium Design */}
-      {showNavigationPreview && activePOI && detailedRoute && (
+      {/* Compact Route Preview */}
+      {showNavigationPreview && activePOI && activePOI.name && detailedRoute && (
         <Animated.View style={[styles.navigationPreview, {
           opacity: bottomSheetAnim,
         }]}>
-          <View style={[styles.previewBlur, { backgroundColor: 'rgba(255, 255, 255, 0.95)' }]}>
-            <LinearGradient
-              colors={['#f8fafc', '#f1f5f9']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.previewHeader}
-            >
-              <View style={styles.previewHeaderContent}>
-                <View>
-                  <Text style={styles.previewTitle}>🎯 {activePOI.name}</Text>
-                  <View style={styles.previewStatsRow}>
-                    <View style={styles.previewStatItem}>
-                      <Text style={styles.previewStatIcon}>📍</Text>
-                      <Text style={styles.previewStats}>{detailedRoute.distance} km</Text>
-                    </View>
-                    <View style={styles.previewStatDivider} />
-                    <View style={styles.previewStatItem}>
-                      <Text style={styles.previewStatIcon}>⏱️</Text>
-                      <Text style={styles.previewStats}>{detailedRoute.duration} min</Text>
-                    </View>
-                  </View>
+          <View style={styles.previewBlur}>
+            {/* Compact Header */}
+            <View style={styles.previewCompactHeader}>
+              <View style={styles.previewHeaderLeft}>
+                <View style={styles.destinationIconWrapper}>
+                  <Ionicons name="location-sharp" size={20} color="#fff" />
                 </View>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setShowNavigationPreview(false);
-                    setActivePOI(null);
-                    setShowRoutes(false);
-                    setDetailedRoute(null);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#f1f5f9', '#e2e8f0']}
-                    style={styles.closePreviewButton}
-                  >
-                    <Text style={styles.closePreviewText}>✕</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-
-            <View style={styles.previewContent}>
-              <View style={styles.previewStepsHeader}>
-                <Text style={styles.previewStepsTitle}>
-                  Turn-by-turn Directions
-                </Text>
-                <View style={styles.stepsCountBadge}>
-                  <Text style={styles.stepsCountText}>{detailedRoute.steps.length}</Text>
+                <View style={styles.previewHeaderInfo}>
+                  <Text style={styles.previewDestinationName} numberOfLines={1}>
+                    {String(activePOI?.name || 'Destination')}
+                  </Text>
+                  <Text style={styles.previewCategory}>{String(activePOI?.category || 'Place')}</Text>
                 </View>
               </View>
-              
-              <ScrollView style={styles.previewStepsList} showsVerticalScrollIndicator={false}>
-                {detailedRoute.steps.map((step, index) => (
-                  <TouchableOpacity key={index} activeOpacity={0.7}>
-                    <LinearGradient
-                      colors={index === 0 
-                        ? ['rgba(59, 130, 246, 0.08)', 'rgba(37, 99, 235, 0.05)']
-                        : ['#ffffff', '#fafafa']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[
-                        styles.previewStep,
-                        index === 0 && styles.previewStepFirst,
-                      ]}
-                    >
-                      <View style={styles.previewStepLeft}>
-                        <LinearGradient
-                          colors={index === 0 ? ['#3b82f6', '#2563eb'] : ['#e2e8f0', '#cbd5e1']}
-                          style={styles.previewStepNumberContainer}
-                        >
-                          <Text style={[
-                            styles.previewStepNumber,
-                            index === 0 && styles.previewStepNumberFirst
-                          ]}>{index + 1}</Text>
-                        </LinearGradient>
-                        <View style={styles.previewStepIconContainer}>
-                          <Text style={styles.previewStepIcon}>
-                            {getTurnIcon(step.type, step.modifier)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.previewStepRight}>
-                        <Text style={styles.previewStepInstruction}>{step.instruction}</Text>
-                        <View style={styles.previewStepMetaRow}>
-                          <Text style={styles.previewStepDistance}>
-                            📍 {step.distance} km
-                          </Text>
-                          {step.duration && (
-                            <>
-                              <Text style={styles.previewStepDot}>•</Text>
-                              <Text style={styles.previewStepDuration}>
-                                ⏱️ {step.duration} min
-                              </Text>
-                            </>
-                          )}
-                        </View>
-                      </View>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setShowNavigationPreview(false);
+                  setActivePOI(null);
+                  setShowRoutes(false);
+                  setDetailedRoute(null);
+                }}
+                style={styles.compactCloseButton}
+              >
+                <Ionicons name="close-circle" size={28} color="#94a3b8" />
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.previewButtonsRow}>
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={styles.openMapsButton}
-                onPress={() => openInMaps(activePOI)}
-              >
-                <LinearGradient
-                  colors={['#6366f1', '#4f46e5', '#4338ca']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.openMapsGradient}
-                >
-                  <Text style={styles.openMapsIcon}>🗺️</Text>
-                  <Text style={styles.openMapsText}>Open in Maps</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+            {/* Route Stats Cards */}
+            <View style={styles.statsCardsContainer}>
+              <View style={styles.statCard}>
+                <Ionicons name="navigate-circle" size={24} color="#3b82f6" />
+                <View style={styles.statCardInfo}>
+                  <Text style={styles.statCardValue}>{String(detailedRoute.distance)} km</Text>
+                  <Text style={styles.statCardLabel}>Distance</Text>
+                </View>
+              </View>
 
+              <View style={styles.statCard}>
+                <Ionicons name="time" size={24} color="#8b5cf6" />
+                <View style={styles.statCardInfo}>
+                  <Text style={styles.statCardValue}>{String(detailedRoute.duration)} min</Text>
+                  <Text style={styles.statCardLabel}>Duration</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Action Button - Full Width */}
+            <View style={styles.previewActionsRow}>
               <TouchableOpacity
-                activeOpacity={0.9}
-                style={styles.startNavButton}
+                activeOpacity={0.85}
                 onPress={beginNavigation}
+                style={styles.primaryActionButtonFull}
               >
                 <LinearGradient
-                  colors={['#10b981', '#059669', '#047857']}
+                  colors={['#3b82f6', '#2563eb']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.startNavGradient}
+                  style={styles.primaryActionGradient}
                 >
-                  <Text style={styles.startNavigationIcon}>▶</Text>
-                  <Text style={styles.startNavigationText}>START</Text>
+                  <Ionicons name="navigate" size={20} color="#fff" />
+                  <Text style={styles.primaryActionText}>Start Navigation</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -1404,12 +1354,12 @@ export default function MapScreen({ navigation }) {
             },
           ]}
         >
-          <BlurView intensity={100} tint="light" style={styles.bottomSheetBlur}>
+          <View style={styles.bottomSheetBlur}>
             <View style={styles.bottomSheetHandle} />
             <View style={styles.bottomSheetHeader}>
               <View style={styles.bottomSheetHeaderLeft}>
                 <View style={styles.bottomSheetIconContainer}>
-                  <Text style={styles.bottomSheetIcon}>📍</Text>
+                  <Ionicons name="location" size={24} color="#3b82f6" />
                 </View>
                 <View>
                   <Text style={styles.bottomSheetTitle}>Nearby Places</Text>
@@ -1430,7 +1380,7 @@ export default function MapScreen({ navigation }) {
               </View>
             ) : routes.length === 0 ? (
               <View style={styles.emptyStateContainer}>
-                <Text style={styles.emptyStateIcon}>📍</Text>
+                <Ionicons name="location-outline" size={64} color="#cbd5e1" />
                 <Text style={styles.emptyStateTitle}>No Places Found</Text>
                 <Text style={styles.emptyStateText}>
                   There are no places within 5km radius.{'\n'}
@@ -1447,7 +1397,8 @@ export default function MapScreen({ navigation }) {
                     end={{ x: 1, y: 1 }}
                     style={styles.emptyStateButtonGradient}
                   >
-                    <Text style={styles.emptyStateButtonText}>🔄 Refresh</Text>
+                    <Ionicons name="refresh" size={18} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.emptyStateButtonText}>Refresh</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -1512,7 +1463,7 @@ export default function MapScreen({ navigation }) {
               ))}
               </ScrollView>
             )}
-          </BlurView>
+          </View>
         </Animated.View>
       )}
     </View>
@@ -1552,14 +1503,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     maxWidth: 320,
   },
-  errorIcon: {
-    fontSize: 64,
-    marginBottom: 20,
-  },
   errorTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1e293b',
+    marginTop: 20,
     marginBottom: 12,
     textAlign: 'center',
   },
@@ -1634,6 +1582,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 12,
   },
+  searchIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#eff6ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
   searchIcon: {
     width: 40,
     height: 40,
@@ -1650,14 +1608,33 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
+    fontWeight: '700',
+    color: '#0f172a',
     marginBottom: 2,
   },
   searchSubtext: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#64748b',
+  },
+  placesCountBadge: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  placesCountText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#fff',
   },
   searchActionIcon: {
     width: 32,
@@ -1672,13 +1649,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#3b82f6',
   },
-  // Control Buttons (Right Side)
+  // Modern Control Buttons (Top Right)
   controlButtonsContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 20,
-    right: 20,
-    gap: 12,
+    top: Platform.OS === 'ios' ? 50 : 10,
+    right: 16,
+    gap: 10,
     zIndex: 10,
+  },
+  modernControlButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  modernControlButtonInner: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   controlButton: {
     width: 48,
@@ -1751,14 +1748,11 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     paddingHorizontal: 30,
   },
-  emptyStateIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
   emptyStateTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#1e293b',
+    marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
@@ -1772,6 +1766,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyStateButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 14,
@@ -1792,10 +1789,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    maxHeight: height * 0.5,
+    height: height * 0.5,
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
-    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.3,
@@ -1803,10 +1799,11 @@ const styles = StyleSheet.create({
     elevation: 15,
   },
   bottomSheetBlur: {
-    flex: 1,
+    height: '100%',
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     paddingBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
   },
   bottomSheetHandle: {
     width: 45,
@@ -1840,9 +1837,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bottomSheetIcon: {
-    fontSize: 22,
-  },
   bottomSheetTitle: {
     fontSize: 18,
     fontWeight: '700',
@@ -1872,11 +1866,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   routeList: {
-    flex: 1,
+    maxHeight: height * 0.35,
     paddingHorizontal: 20,
+    backgroundColor: 'transparent',
   },
   routeListContent: {
-    paddingBottom: 20,
+    paddingBottom: 30,
+    paddingTop: 10,
   },
   routeItem: {
     flexDirection: 'row',
@@ -2182,26 +2178,160 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 12,
   },
-  // Navigation Preview Premium Styles
+  // Compact Navigation Preview Styles
   navigationPreview: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    maxHeight: height * 0.75,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    overflow: 'hidden',
+    height: height * 0.32,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     elevation: 20,
   },
   previewBlur: {
     flex: 1,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+  },
+  previewCompactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  previewHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  destinationIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  previewHeaderInfo: {
+    flex: 1,
+  },
+  previewDestinationName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  previewCategory: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748b',
+    textTransform: 'capitalize',
+  },
+  compactCloseButton: {
+    padding: 4,
+  },
+  statsCardsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  statCardInfo: {
+    flex: 1,
+  },
+  statCardValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  statCardLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  previewActionsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  secondaryActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#bfdbfe',
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#3b82f6',
+  },
+  primaryActionButton: {
+    flex: 1.3,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  primaryActionButtonFull: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  primaryActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  primaryActionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
   previewHeader: {
     paddingTop: 24,
@@ -2215,12 +2345,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  previewTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  previewTitleIcon: {
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
   previewTitle: {
     fontSize: 24,
     fontWeight: '900',
     color: '#0f172a',
-    marginBottom: 12,
     letterSpacing: 0.3,
+    flex: 1,
   },
   previewStatsRow: {
     flexDirection: 'row',
@@ -2231,9 +2373,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  previewStatIcon: {
-    fontSize: 16,
   },
   previewStats: {
     fontSize: 16,
@@ -2256,14 +2395,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  closePreviewText: {
-    fontSize: 22,
-    color: '#64748b',
-    fontWeight: '600',
-  },
   previewContent: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: 0,
+    backgroundColor: 'transparent',
   },
   previewStepsHeader: {
     flexDirection: 'row',
@@ -2271,6 +2406,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     marginBottom: 16,
+    marginTop: 16,
+    backgroundColor: 'transparent',
   },
   previewStepsTitle: {
     fontSize: 18,
@@ -2296,6 +2433,7 @@ const styles = StyleSheet.create({
   previewStepsList: {
     flex: 1,
     paddingHorizontal: 20,
+    backgroundColor: 'transparent',
   },
   previewStep: {
     flexDirection: 'row',
@@ -2396,9 +2534,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  openMapsIcon: {
-    fontSize: 18,
-  },
   openMapsText: {
     color: '#fff',
     fontSize: 15,
@@ -2435,139 +2570,169 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  startNavigationIcon: {
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: '900',
-  },
   startNavigationText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
-  // Turn-by-Turn Navigation Styles (Google Maps style)
+  // Modern Turn-by-Turn Navigation Styles
   turnByTurnContainer: {
     position: 'absolute',
-    top: 60,
+    top: Platform.OS === 'ios' ? 50 : 10,
     left: 0,
     right: 0,
   },
-  currentTurnCard: {
-    backgroundColor: '#1e293b',
-    marginHorizontal: 16,
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
+  navCardBlur: {
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    marginHorizontal: 12,
+    marginRight: 80,
+    borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  currentTurnCard: {
+    backgroundColor: '#1e293b',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  currentTurnIconWrapper: {
+    alignItems: 'center',
+  },
+  currentTurnIconBg: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
     shadowRadius: 8,
-    elevation: 12,
+    elevation: 6,
   },
-  turnIcon: {
-    fontSize: 56,
-    marginRight: 20,
-    color: '#fff',
+  distanceBadge: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  currentTurnInfo: {
+  distanceBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  currentTurnContent: {
     flex: 1,
   },
-  currentTurnDistance: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+  currentTurnLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 1,
     marginBottom: 4,
   },
   currentTurnInstruction: {
     fontSize: 18,
-    color: '#e2e8f0',
-    fontWeight: '500',
+    fontWeight: '700',
+    color: '#fff',
+    lineHeight: 24,
   },
-  tripInfoBar: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
+  closeNavButton: {
+    padding: 4,
   },
-  tripInfoItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  tripInfoLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    marginBottom: 2,
-    fontWeight: '600',
-  },
-  tripInfoValue: {
-    fontSize: 16,
-    color: '#1e293b',
-    fontWeight: 'bold',
-  },
-  tripInfoDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#e2e8f0',
-  },
-  exitNavButton: {
+  closeNavCircle: {
     width: 36,
     height: 36,
-    backgroundColor: '#f1f5f9',
     borderRadius: 18,
+    backgroundColor: '#ef4444',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  exitNavText: {
-    fontSize: 20,
-    color: '#475569',
-    fontWeight: 'bold',
-  },
-  nextTurnPreview: {
-    backgroundColor: '#f8fafc',
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 12,
-    padding: 12,
+  tripStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
   },
-  nextTurnLabel: {
-    fontSize: 10,
-    fontWeight: 'bold',
+  tripStatBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tripStatContent: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  tripStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  tripStatUnit: {
+    fontSize: 11,
+    fontWeight: '600',
     color: '#64748b',
-    marginRight: 8,
   },
-  nextTurnIcon: {
-    fontSize: 24,
-    marginRight: 8,
+  tripStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#cbd5e1',
+    marginHorizontal: 4,
   },
-  nextTurnText: {
+  nextTurnCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  nextTurnThen: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#8b5cf6',
+    letterSpacing: 1,
+  },
+  nextTurnIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ede9fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nextTurnInstructionText: {
     flex: 1,
     fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  nextTurnDistance: {
-    fontSize: 12,
-    color: '#94a3b8',
     fontWeight: '600',
-    marginLeft: 8,
+    color: '#334155',
+  },
+  nextTurnDistanceText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8b5cf6',
   },
   recenterButton: {
     position: 'absolute',
@@ -2585,8 +2750,23 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 6,
   },
-  recenterIcon: {
-    fontSize: 28,
+  recenterButtonContainer: {
+    position: 'absolute',
+    bottom: 120,
+    right: 20,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  recenterButtonBg: {
+    width: 56,
+    height: 56,
+    backgroundColor: '#3b82f6',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   userMarker: {
     width: 40,

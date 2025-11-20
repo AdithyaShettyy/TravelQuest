@@ -28,6 +28,12 @@ const UserBadge = require('./UserBadge')(sequelize);
 const Reward = require('./Reward')(sequelize);
 const RewardRedemption = require('./RewardRedemption')(sequelize);
 const Leaderboard = require('./Leaderboard')(sequelize);
+const Friendship = require('./Friendship')(sequelize);
+const Squad = require('./Squad')(sequelize);
+const SquadMember = require('./SquadMember')(sequelize);
+const PowerUp = require('./PowerUp')(sequelize);
+const Achievement = require('./Achievement')(sequelize);
+const UserAchievement = require('./UserAchievement')(sequelize);
 
 // Define associations
 User.hasMany(Submission, { foreignKey: 'userId', as: 'submissions' });
@@ -48,6 +54,30 @@ RewardRedemption.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Reward.hasMany(RewardRedemption, { foreignKey: 'rewardId', as: 'redemptions' });
 RewardRedemption.belongsTo(Reward, { foreignKey: 'rewardId', as: 'reward' });
 
+// Friendship associations
+User.hasMany(Friendship, { foreignKey: 'userId', as: 'sentRequests' });
+User.hasMany(Friendship, { foreignKey: 'friendId', as: 'receivedRequests' });
+Friendship.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Friendship.belongsTo(User, { foreignKey: 'friendId', as: 'friend' });
+
+// Squad associations
+User.hasMany(Squad, { foreignKey: 'leaderId', as: 'leaderOf' });
+Squad.belongsTo(User, { foreignKey: 'leaderId', as: 'leader' });
+Squad.hasMany(SquadMember, { foreignKey: 'squadId', as: 'members' });
+SquadMember.belongsTo(Squad, { foreignKey: 'squadId', as: 'squad' });
+User.hasMany(SquadMember, { foreignKey: 'userId', as: 'squadMemberships' });
+SquadMember.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// PowerUp associations
+User.hasMany(PowerUp, { foreignKey: 'userId', as: 'powerups' });
+PowerUp.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// Achievement associations
+User.belongsToMany(Achievement, { through: UserAchievement, foreignKey: 'userId', as: 'achievements' });
+Achievement.belongsToMany(User, { through: UserAchievement, foreignKey: 'achievementId', as: 'holders' });
+UserAchievement.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+UserAchievement.belongsTo(Achievement, { foreignKey: 'achievementId', as: 'achievement' });
+
 module.exports = {
   sequelize,
   User,
@@ -58,5 +88,11 @@ module.exports = {
   UserBadge,
   Reward,
   RewardRedemption,
-  Leaderboard
+  Leaderboard,
+  Friendship,
+  Squad,
+  SquadMember,
+  PowerUp,
+  Achievement,
+  UserAchievement
 };

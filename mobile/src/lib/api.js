@@ -5,7 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // For iOS Simulator: http://192.168.1.39:3000
 // For Android Emulator: http://10.0.2.2:3000
 // For Physical Device: http://YOUR_COMPUTER_IP:3000
-const API_BASE_URL = 'http://192.168.1.39:3000/api';
+// For Tunnel Mode: Uses EXPO_PUBLIC_API_URL environment variable
+const API_BASE_URL = `${process.env.EXPO_PUBLIC_API_URL}/api`;
 
 const api = axios.create({
   baseURL: API_BASE_URL,

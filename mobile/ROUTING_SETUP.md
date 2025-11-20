@@ -73,7 +73,6 @@ If you prefer Google Maps:
    ```
 
 ---
-
 ## Testing Without API Key
 
 The app will work without any API key using straight-line fallback routes. These are:
